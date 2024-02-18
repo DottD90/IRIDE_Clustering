@@ -72,7 +72,7 @@ Python Dependencies:
 # - Python modules
 import os
 import argparse
-import warnings
+import logging
 from datetime import datetime
 from multiprocessing import Pool
 from functools import partial
@@ -80,12 +80,58 @@ from functools import partial
 import geopandas as gpd
 from active_areas_clustering import process_burst
 
+# - Set logging level
+logging.basicConfig(level=logging.INFO)
+
+
+def process_track(track: str, index_gdf: gpd.GeoDataFrame, args) -> None:
+    """
+    Process the input track
+    :param track:  number
+    :param index_gdf: reference index file passed as geopandas dataframe
+    :param args: processing arguments passed as argparse object
+    :return: None
+    """
+    logging.info(f"# - Processing track: {track}")
+    # - Filter the index file by track
+    track_gdf = index_gdf[index_gdf["Track"] == track]
+    track_shape = track_gdf.shape[0]
+
+    # - Ignore busts with Path set to None
+    track_gdf = track_gdf[track_gdf["Path"] != "None"]
+
+    if track_gdf.shape[0] == 0:
+        logging.info(f"# - No input file found for track: {track}")
+        return
+
+    if track_gdf.shape[0] < track_shape:
+        # - Rise Warning
+        logging.warning(f"# - Missing Input file for track: {track}")
+
+    # - Process the track
+    in_path = list(track_gdf['Path'])
+    n_proc = len(in_path)
+
+    with Pool(n_proc) as p:
+        kwargs = {'kmeans_classes': args.kmeans_classes,
+                  'in_field_threshold': args.vel_threshold,
+                  'eps': args.eps,
+                  'min_samples': args.min_samples,
+                  'pid_base': args.pid_base,
+                  'buffer': args.buffer,
+                  'in_field': args.in_field,
+                  'out_field': args.out_field,
+                  'compress': args.compress}
+        map_func = partial(process_burst, **kwargs)
+        _ = p.map(map_func, in_path)
+
 
 def main() -> None:
     # - Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Compute Active Areas Clustering (AAC) for the selected "
-                    "area of interest."
+                    "area of interest.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     # - burst_file: Sentinel-1 burst index file file
     parser.add_argument('index_file', type=str,
@@ -142,8 +188,9 @@ def main() -> None:
 
     # - Verify if reference file exists
     if not os.path.exists(args.index_file):
-        raise FileNotFoundError(f"Index file {args.index_file} "
-                                f"does not exist.")
+        logging.error(f"# - Index file {args.index_file} does not exist.")
+        return
+
     # - Read the index file with geopandas
     index_gdf = gpd.read_file(args.index_file).to_crs("EPSG:4326")
 
@@ -153,42 +200,11 @@ def main() -> None:
 
     # - Process each track
     for track in tracks:
-        print(f"# - Processing track: {track}")
-        # - Filter the index file by track
-        track_gdf = index_gdf[index_gdf["Track"] == track]
-        track_shape = track_gdf.shape[0]
-
-        # - Ignore busts with Path set to None
-        track_gdf = track_gdf[track_gdf["Path"] != "None"]
-
-        if track_gdf.shape[0] == 0:
-            print(f"# - No input file found for track: {track}")
-            continue
-
-        if track_gdf.shape[0] < track_shape:
-            # - Rise Warning
-            warnings.warn(f"# - Missing Input file for track: {track}")
-
-        # - Process the track
-        in_path = list(track_gdf['Path'])
-        n_proc = len(in_path)
-
-        with Pool(n_proc) as p:
-            kwargs = {'kmeans_classes': args.kmeans_classes,
-                      'in_field_threshold': args.vel_threshold,
-                      'eps': args.eps,
-                      'min_samples': args.min_samples,
-                      'pid_base': args.pid_base,
-                      'buffer': args.buffer,
-                      'in_field': args.in_field,
-                      'out_field': args.out_field,
-                      'compress': args.compress}
-            map_func = partial(process_burst, **kwargs)
-            p_ts_list = p.map(map_func, in_path)
+        process_track(track, index_gdf, args)
 
 
 if __name__ == "__main__":
     start_time = datetime.now()
     main()
     end_time = datetime.now()
-    print(f"# - Computation Time: {end_time - start_time}")
+    logging.info(f"Computation Time: {end_time - start_time}")
