@@ -1,0 +1,14 @@
+name: iride_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas
+  - numpy
+  - geopandas
+  - dask-geopandas
+  - fsspec
+  - scikit-learn
+  - alphashape
+  - shapely
+  - tqdm
