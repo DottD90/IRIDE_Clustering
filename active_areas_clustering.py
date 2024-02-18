@@ -50,18 +50,18 @@ options:
   -M MIN_SAMPLES [MIN_SAMPLES ...], --min-samples MIN_SAMPLES [MIN_SAMPLES ...]
             minimum number of samples, fed to the DBSCAN algorithm
             (broadcast to the size of input paths)
-  -p PID_BASE [PID_BASE ...], --pid-base PID_BASE [PID_BASE ...]
+  -P PID_BASE [PID_BASE ...], --pid-base PID_BASE [PID_BASE ...]
             base string for PID construction
             (broadcast to the size of input paths)
 
-  -b BUFFER [BUFFER ...], --buffer BUFFER [BUFFER ...]
+  -B BUFFER [BUFFER ...], --buffer BUFFER [BUFFER ...]
         buffer used to dilate polygons
         (broadcast to the size of input paths)
 
-  -i IN_FIELD [IN_FIELD ...], --in-field IN_FIELD [IN_FIELD ...]
+  -I IN_FIELD [IN_FIELD ...], --in-field IN_FIELD [IN_FIELD ...]
         input field used for clustering (broadcast to the size of input paths)
 
-  -o OUT_FIELD [OUT_FIELD ...], --out-field OUT_FIELD [OUT_FIELD ...]
+  -O OUT_FIELD [OUT_FIELD ...], --out-field OUT_FIELD [OUT_FIELD ...]
         name of the field saved on the output shapefile
         (broadcast to the size of input paths)
 
@@ -86,21 +86,23 @@ Python Dependencies:
     - tqdm: A Fast, Extensible Progress Bar for Python and CLI
         https://tqdm.github.io/
 """
+# - Python modules
 import argparse
 import logging
 import sys
 from traceback import format_exception
-
+from datetime import datetime
 import fsspec
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import concurrent.futures as cf
+# - Third-party modules
 from sklearn.cluster import DBSCAN, KMeans
 import alphashape
 import geopandas as gpd
 import shapely.geometry
 from tqdm import tqdm
-import concurrent.futures as cf
 
 
 schema = {
@@ -160,10 +162,11 @@ def read_as_geodataframe(path: Path, **kwargs) -> gpd.GeoDataFrame:
     return df
 
 
-def process(
+def process_burst(
         in_path: Path | str, kmeans_classes: int, in_field_threshold: float,
         eps: float, min_samples: int, pid_base: int,
-        buffer: float, in_field: str, out_field: str) -> gpd.GeoDataFrame:
+        buffer: float, in_field: str, out_field: str,
+        compress: bool = False) -> gpd.GeoDataFrame:
     """
     Process a single file
     :param in_path: absolute path to the file
@@ -176,6 +179,7 @@ def process(
     :param buffer: polygon buffer size in meters
     :param in_field: input reference field name (e.g. "mean_vel")
     :param out_field: output reference field name (e.g. "mean_vel")
+    :param compress: compress the output shapefile
     :return: GeoDataFrame with polygons
     """
     # - Load  input data as a GeoDataFrame
@@ -219,7 +223,7 @@ def process(
         "min_vel": [],
         "vel_std": [],
     }
-    for id_pt in tqdm(df.polygon_id.unique(), desc="Class loop"):
+    for id_pt in df.polygon_id.unique():
         if id_pt == -1:
             continue
         mask = df.polygon_id == id_pt
@@ -253,13 +257,16 @@ def process(
         poly_geoms.append(poly)
     # - Save polygons
     gdf = gpd.GeoDataFrame(data=data, geometry=poly_geoms, crs=3035)
-    out_path = in_path.parent / f"{in_path.stem}_poly_{in_field}.shp"
+    out_path = str(Path(in_path).parent
+                   / f"{Path(in_path).stem}_poly_{in_field}.shp")
+    if compress:
+        out_path += ".zip"
     gdf.to_file(str(out_path), schema=schema, driver="ESRI Shapefile")
 
     return gdf
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         "Active Areas Deformation Clustering",
         description="Default parameters are adapted to CSK SVC01 products.",
@@ -277,7 +284,7 @@ def main():
         "-K",
         "--kmeans-classes",
         type=int,
-        default=7,
+        default=21,
         nargs="+",
         help="Number of classes for k-Means velocity clustering "
              "(broadcast to the size of input paths)",
@@ -286,7 +293,7 @@ def main():
         "-T",
         "--vel-threshold",
         type=float,
-        default=1.0,
+        default=1.25,
         nargs="+",
         help="Velocity threshold applied to clusters "
              "(broadcast to the size of input paths)",
@@ -295,7 +302,7 @@ def main():
         "-E",
         "--eps",
         type=float,
-        default=40,
+        default=25,
         nargs="+",
         help="epsilon parameter for DBSCAN algorithm and "
              "alphashape (broadcast to the size of input paths)",
@@ -310,7 +317,7 @@ def main():
              "(broadcast to the size of input paths)",
     )
     parser.add_argument(
-        "-p",
+        "-P",
         "--pid-base",
         type=str,
         default="bDG1",
@@ -319,16 +326,16 @@ def main():
              "(broadcast to the size of input paths)",
     )
     parser.add_argument(
-        "-b",
+        "-B",
         "--buffer",
         type=float,
-        default=3.0,
+        default=12.5,
         nargs="+",
         help="buffer used to dilate polygons "
              "(broadcast to the size of input paths)",
     )
     parser.add_argument(
-        "-i",
+        "-I",
         "--in-field",
         type=str,
         default="mean_vel",
@@ -337,7 +344,7 @@ def main():
              "(broadcast to the size of input paths)",
     )
     parser.add_argument(
-        "-o",
+        "-O",
         "--out-field",
         type=str,
         default="mean_vel",
@@ -345,7 +352,7 @@ def main():
         help="name of the field saved on the output shapefile "
              "(broadcast to the size of input paths)",
     )
-    parser.add_argument("-j", "--jobs", type=int,
+    parser.add_argument("-J", "--jobs", type=int,
                         help="Number of concurrent jobs")
     args = parser.parse_args()
 
@@ -366,11 +373,12 @@ def main():
     with cf.ProcessPoolExecutor(args.jobs) as pool:
         future_to_path = {}
         for params in all_params:
-            future = pool.submit(process, *params)
+            future = pool.submit(process_burst, *params)
             future_to_path[future] = params[0]
+
     for future in tqdm(
         cf.as_completed(future_to_path.keys()),
-        desc="Clustering",
+        desc="# - Clustering",
         total=len(future_to_path),
     ):
         path = future_to_path[future]
@@ -378,7 +386,7 @@ def main():
             future.result()
         except Exception as exc:
             logging.critical(
-                "%s generated an exception:\n%s",
+                "# - %s generated an exception:\n%s",
                 path.stem,
                 "\n".join(format_exception(exc)),
             )
@@ -386,4 +394,7 @@ def main():
 
 
 if __name__ == "__main__":
+    start_time = datetime.now()
     main()
+    end_time = datetime.now()
+    print(f"# - Computation Time: {end_time - start_time}")
