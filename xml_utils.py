@@ -12,7 +12,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom.minidom import parseString
-from typing import Union, Dict
+from typing import Union, Dict, List
 
 
 def xml_to_dict(element: ET.Element) -> Union[Dict, str]:
@@ -26,22 +26,30 @@ def xml_to_dict(element: ET.Element) -> Union[Dict, str]:
     return {child.tag: xml_to_dict(child) for child in element}
 
 
-def extract_xml_from_zip(zip_file_path: str) -> Dict:
+def extract_xml_from_zip(zip_file_path: str) -> List[Dict]:
     """
-    Extract the xml file from the zip file and convert it to a dictionary
+    Extract the xml files from the zip file and convert them to dictionaries
     Note: this function assumes that no repeated keys are present
         in the xml file.
     :param zip_file_path: absolute path to the zip file
-    :return: python dictionary
+    :return: list of python dictionaries
     """
-    with zipfile.ZipFile(zip_file_path, 'r') as zipf:
-        for filename in zipf.namelist():
-            if filename.endswith('.xml'):
-                with zipf.open(filename) as xml_file:
-                    xml_string = xml_file.read().decode('utf-8')
-                    root = ET.fromstring(xml_string)
-                    xml_dict = xml_to_dict(root)
-                    return xml_dict
+    try:
+        with zipfile.ZipFile(zip_file_path, 'r') as zipf:
+            xml_dicts = []
+            for filename in zipf.namelist():
+                if filename.endswith('.xml'):
+                    with zipf.open(filename) as xml_file:
+                        xml_string = xml_file.read().decode('utf-8')
+                        root = ET.fromstring(xml_string)
+                        xml_dict = xml_to_dict(root)
+                        xml_dicts.append(xml_dict)
+            return xml_dicts
+    except zipfile.BadZipFile:
+        print(f"Error: The file {zip_file_path} is not a zip "
+              f"file or it is corrupted.")
+    except FileNotFoundError:
+        print(f"Error: The file {zip_file_path} does not exist.")
 
 
 def dict_to_xml(input_dict: Dict, filename: str) -> None:
