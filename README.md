@@ -5,10 +5,30 @@ IRIDE Ground Motion Clustering
 
 ---
 
-Compute active areas perimeter (polygons) from a set of points/persistent
-sctterers. The algorithm is based on a combination of K-means and DBSCAN
+A tool that computes the perimeter of areas characterized by active deformation from a set of points/persistent
+scatterers. The algorithm is based on a combination of K-means and DBSCAN
 clustering algorithms.
 
+---
+#### Sentinel-1 Processing
+
+Ad-hoc processing of Sentinel-1 data.
+
+- **_index_bursts.py_** - Identify Sentinel-1 bursts covering the selected area of interest.
+Save the generated index to an ESRI shapefile.
+- **_active_areas_clustering.py_** - Compute active areas perimeter (polygons) from a set of points/persistent
+scatterers. The algorithm is based on a combination of K-means and DBSCAN.
+- **_compute_aac.py_** - Compute active areas clustering geospatial products for IRIDE Lot 2 - SE-S3-04 Critical Infrastructure Monitoring.
+  - See **_active_areas_clustering.py_**. for more details about the algorithm.
+
+
+----
+#### COSMO-SkyMed Processing
+TBD
+
+----
+#### SAOCOM Processing
+TBD
 
 ----
 
@@ -31,7 +51,11 @@ clustering algorithms.
 - [pandas: Python Data Analysis Library.][]
 - [geopandas: add support for geographic data to pandas objects.][]
 - [matplotlib: Library for creating static, animated, and interactive visualizations in Python.][]
+- [lxml: XML and HTML with Python.][]
+- [alphashape: Alpha Shape Toolbox.][]
 
+
+---
 ## License
 
 The content of this project is licensed under the [Creative Commons
@@ -56,5 +80,7 @@ under the [MIT license][].
 [pandas: Python Data Analysis Library.]:https://pandas.pydata.org/
 [geopandas: add support for geographic data to pandas objects.]:https://geopandas.org/en/stable/
 [matplotlib: Library for creating static, animated, and interactive visualizations in Python.]:https://matplotlib.org
+[lxml: XML and HTML with Python.]:https://lxml.de/
+[alphashape: Alpha Shape Toolbox.]:https://pypi.org/project/alphashape/
 [Creative Commons Attribution 4.0 Attribution license]: https://creativecommons.org/licenses/by/4.0/
 [MIT license]: LICENSE
