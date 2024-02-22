@@ -76,21 +76,30 @@ import logging
 from datetime import datetime
 from multiprocessing import Pool
 from functools import partial
+from typing import List, Tuple
+from pathlib import Path
+import shutil
+import xml.etree.ElementTree as ET
+from xml.dom.minidom import parseString
 # - External modules
 import geopandas as gpd
 from active_areas_clustering import process_burst
+from xml_utils import extract_xml_from_zip
 
-# - Set logging level
-logging.basicConfig(level=logging.INFO)
+# - Set logging level and message format
+log_format = "%(message)s"
+logging.basicConfig(level=logging.INFO, format=log_format)
 
 
-def process_track(track: str, index_gdf: gpd.GeoDataFrame, args) -> None:
+def process_track(track: str, index_gdf: gpd.GeoDataFrame, args
+                  ) -> Tuple[List[str], List[gpd.GeoDataFrame]]:
     """
     Process the input track
     :param track:  number
     :param index_gdf: reference index file passed as geopandas dataframe
     :param args: processing arguments passed as argparse object
-    :return: None
+    :return: Tuple composed by the list of input files and the list of
+            output geopandas dataframes.
     """
     logging.info(f"# - Processing track: {track}")
     # - Filter the index file by track
@@ -102,7 +111,7 @@ def process_track(track: str, index_gdf: gpd.GeoDataFrame, args) -> None:
 
     if track_gdf.shape[0] == 0:
         logging.info(f"# - No input file found for track: {track}")
-        return
+        return [], []
 
     if track_gdf.shape[0] < track_shape:
         # - Rise Warning
@@ -120,10 +129,11 @@ def process_track(track: str, index_gdf: gpd.GeoDataFrame, args) -> None:
                   'pid_base': args.pid_base,
                   'buffer': args.buffer,
                   'in_field': args.in_field,
-                  'out_field': args.out_field,
-                  'compress': args.compress}
+                  'out_field': args.out_field}
         map_func = partial(process_burst, **kwargs)
-        _ = p.map(map_func, in_path)
+        # - Return list of dataframes
+        out_gdf = p.map(map_func, in_path)
+    return in_path, out_gdf
 
 
 def main() -> None:
@@ -137,51 +147,58 @@ def main() -> None:
     parser.add_argument('index_file', type=str,
                         help='Index file containing the list of'
                              'bursts available over the AOI.')
+
     # - Optional arguments
+    # - Output directory
+    parser.add_argument("-D", "--out_dir", type=str,
+                        default=os.getcwd(),
+                        help='Output directory where '
+                             'the results will be saved.')
+    # - K: Number of classes for k-Means velocity clustering
     parser.add_argument("-K", "--kmeans-classes",
                         type=int, default=21, nargs="+",
                         help="Number of classes for k-Means "
                              "velocity clustering (broadcast to the "
                              "size of input paths)")
-
+    # - T: Velocity threshold applied to clusters
     parser.add_argument("-T", "--vel-threshold", type=float,
                         default=1.25, nargs="+",
                         help="Velocity threshold applied to clusters "
                              "(broadcast to the size of input paths)")
-
+    # - E: epsilon parameter for DBSCAN algorithm and alphashape
     parser.add_argument("-E", "--eps", type=float,
                         default=25, nargs="+",
                         help="epsilon parameter for DBSCAN algorithm and "
                              "alphashape (broadcast to the size of "
                              "input paths)")
-
+    # - M: minimum number of samples, fed to the DBSCAN algorithm
     parser.add_argument("-M", "--min-samples", type=int,
                         default=10, nargs="+",
                         help="minimum number of samples, "
                              "fed to the DBSCAN algorithm "
                              "(broadcast to the size of input paths)")
-
+    # - P: base string for PID construction
     parser.add_argument("-P", "--pid-base", type=str,
                         default="bDG1", nargs="+",
                         help="base string for PID construction "
                              "(broadcast to the size of input paths)")
-
+    # - B: buffer used to dilate polygons
     parser.add_argument("-B", "--buffer", type=float,
                         default=12.5, nargs="+",
                         help="buffer used to dilate polygons "
                              "(broadcast to the size of input paths)")
-
+    # - I: input field used for clustering
     parser.add_argument("-I", "--in-field", type=str,
                         default="mean_vel", nargs="+",
                         choices=["mean_vel", "acc"],
                         help="input field used for clustering "
                              "(broadcast to the size of input paths)")
-
+    # - O: name of the field saved on the output shapefile
     parser.add_argument("-O", "--out-field", type=str,
                         default="mean_vel", nargs="+",
                         help="name of the field saved on the output shapefile "
                              "(broadcast to the size of input paths)")
-
+    # - C: Compress output shapefile - .zip format
     parser.add_argument("-C", "--compress", action="store_true",
                         help="Compress output shapefile - .zip format")
     args = parser.parse_args()
@@ -190,6 +207,29 @@ def main() -> None:
     if not os.path.exists(args.index_file):
         logging.error(f"# - Index file {args.index_file} does not exist.")
         return
+
+    # - Define output Product ID
+    if args.in_field == "mean_vel":
+        out_prod_id = 'S3-04-SNT-02'
+        out_prod_str = out_prod_id.replace('-', '')
+        out_prod_desc = "Active deformation areas close to infrastructures"
+    else:
+        out_prod_id = 'S3-04-SNT-03'
+        out_prod_str = out_prod_id.replace('-', '')
+        out_prod_desc = ("Anomalous Deformation Areas based on "
+                         "acceleration analysis:")
+
+    # - Extract Sensor ID from the Product ID
+    # - Note: This is a temporary solution!!!
+    if 'SNT' in out_prod_id:
+        sensor_id = 'SNT'
+    elif 'CSM' in out_prod_id:
+        sensor_id = 'CSM'
+    else:
+        sensor_id = 'SAO'
+
+    # - Create the output directory if it does not exist
+    os.makedirs(args.out_dir, exist_ok=True)
 
     # - Read the index file with geopandas
     index_gdf = gpd.read_file(args.index_file).to_crs("EPSG:4326")
@@ -200,11 +240,146 @@ def main() -> None:
 
     # - Process each track
     for track in tracks:
-        process_track(track, index_gdf, args)
+        in_path, burst_gdf = process_track(track, index_gdf, args)
+
+        for cnt, brst in enumerate(burst_gdf):
+            if brst is not None:
+                # - Import input data ancillary data
+                xml_dicts = extract_xml_from_zip(in_path[cnt])[0]
+                in_prod_id = xml_dicts['product_id'].replace('-', '')
+
+                # - Input product description
+                if xml_dicts['product_id'] == 'S3-01-SNT-01':
+                    in_gsp_description = 'Single Geometry Deformation'
+                elif xml_dicts['product_id'] == 'S3-01-SNT-02':
+                    in_gsp_description \
+                        = 'Single Geometry Calibrated Deformation'
+                else:
+                    # - Raise Warning
+                    logging.warning(f"# - Selected Input might be wrong: "
+                                    f"{xml_dicts['product_id']}")
+                    in_gsp_description = xml_dicts['product_id']
+
+                # - Create Output Product Directory
+                out_d_name \
+                    = Path(in_path[cnt]).stem.replace(in_prod_id, out_prod_str)
+                out_prod_dir \
+                    = os.path.join(args.out_dir, out_d_name)
+                os.makedirs(out_prod_dir, exist_ok=True)
+
+                # - Covert to WGS84
+                brst = brst.to_crs("EPSG:4326")
+                # - Save the output file
+                out_file = os.path.join(out_prod_dir, f"{out_d_name}.shp")
+                brst.to_file(out_file)
+                print(f"# - Output file saved: {out_file}")
+
+                # - Extract Bounding Box and Perimeter
+                x_min, y_min, x_max, y_max = brst.total_bounds
+                # - extract dataset envelope polygon
+                envelope\
+                    = gpd.GeoSeries([brst.unary_union.envelope],
+                                    crs=brst.crs).iloc[0].exterior.coords.xy
+                xs = envelope[0]
+                ys = envelope[1]
+                crd = list(zip(xs, ys))
+
+                env_geometry = {
+                    "type": "Polygon",
+                    "coordinates": [crd],
+                }
+
+                # - Add XML File
+                #  - Create the root element
+                root = ET.Element('GSP')
+
+                # - Add child elements to the root
+                gsp_id = ET.SubElement(root, 'gsp_id')
+                gsp_id.text = out_prod_id
+                product_id = ET.SubElement(root, 'product_id')
+                product_id.text = out_d_name
+
+                description = ET.SubElement(root, 'description')
+                description.text = out_prod_desc
+
+                sensor = ET.SubElement(root, 'sensor_id')
+                sensor.text = sensor_id
+
+                track_id = ET.SubElement(root, 'track_id')
+                track_id.text = track
+
+                provider = ET.SubElement(root, 'provider')
+                provider.text = 'eGeos'
+
+                # - Add Processing, Start, and End Date
+                production_date = ET.SubElement(root, 'production_date')
+                production_date.text \
+                    = xml_dicts['production_date'].replace('-', '')
+
+                start_date = ET.SubElement(root, 'start_date')
+                start_date.text \
+                    = xml_dicts['start_date'].replace('-', '')
+
+                end_date = ET.SubElement(root, 'end_date')
+                end_date.text \
+                    = xml_dicts['end_date'].replace('-', '')
+
+                # - Add Bounding Box and Perimeter
+                bbox = ET.SubElement(root, 'bbox')
+                bbox.text = f"{x_min} {y_min} {x_max} {y_max}"
+                geometry = ET.SubElement(root, 'geometry')
+                geometry.text = str(env_geometry)
+
+                crs = ET.SubElement(root, 'crs')
+                crs.text = xml_dicts['crs']
+
+                # - Create a new element for the dataset
+                dataset = ET.SubElement(root, 'dataset')
+
+                # - Source Data
+                gsp = ET.SubElement(dataset, 'gsp')
+                gsp_id = ET.SubElement(gsp, 'gsp_id')
+                gsp_id.text = xml_dicts['product_id']
+                product_id = ET.SubElement(gsp, 'product_id')
+                product_id.text = Path(in_path[cnt]).stem
+                burst_id = ET.SubElement(gsp, 'burst_id')
+                burst_id.text = xml_dicts['burst_id']
+                description = ET.SubElement(gsp, 'description')
+                description.text = in_gsp_description
+
+                # - Other EO Non-EO Input Data
+                input_x = ET.SubElement(dataset, 'input')
+                input_id = ET.SubElement(input_x, 'input_id')
+                input_id.text = 'S3-NEO-I09'
+                version = ET.SubElement(input_x, 'version')
+                version.text = 'OpenStreetMap'
+                description = ET.SubElement(input_x, 'description')
+                description.text \
+                    = ("OpenStreetMap (Version 1.0). OpenStreetMap "
+                       "Foundation. https://doi.org/10.13127/osm/1.0.")
+
+                # - Save Formatted XML to File
+                xml_string = ET.tostring(root, encoding='utf-8', method='xml')
+                # - Use minidom to prettify the xml string
+                dom = parseString(xml_string)
+                pretty_xml = dom.toprettyxml()
+                # - Write the pretty xml string to file
+                with open(os.path.join(out_prod_dir, f"{out_d_name}.xml"),
+                          'w') as f:
+                    f.write(pretty_xml)
+
+                # - Check if the --compress argument was provided
+                if args.compress:
+                    # - Compress the output directory
+                    shutil.make_archive(out_prod_dir, 'zip', out_prod_dir)
+                    # - Delete the original directory
+                    shutil.rmtree(out_prod_dir)
+                    logging.info(
+                        f"# - Output directory compressed: {out_prod_dir}.zip")
 
 
 if __name__ == "__main__":
     start_time = datetime.now()
     main()
     end_time = datetime.now()
-    logging.info(f"Computation Time: {end_time - start_time}")
+    logging.info(f"# - Computation Time: {end_time - start_time}")
