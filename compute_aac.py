@@ -54,8 +54,11 @@ options:
   -O OUT_FIELD [OUT_FIELD ...], --out-field OUT_FIELD [OUT_FIELD ...]
         name of the field saved on the output shapefile
         (broadcast to the size of input paths)
+  -V VALIDATE_XML, --validate_xml VALIDATE_XML
+                        Validate the XML file against the schema
+                        - Path. (default: None)
 
-    -C, --compress        Compress output shapefile - .zip format.
+  -C, --compress        Compress output shapefile - .zip format.
 
 Python Dependencies:
     - pandas:Python Data Analysis Library
@@ -84,7 +87,7 @@ from xml.dom.minidom import parseString
 # - External modules
 import geopandas as gpd
 from active_areas_clustering import process_burst
-from xml_utils import extract_xml_from_zip
+from xml_utils import extract_xml_from_zip, validate_xml_against_schema
 
 # - Set logging level and message format
 log_format = "%(message)s"
@@ -198,6 +201,10 @@ def main() -> None:
                         default="mean_vel", nargs="+",
                         help="name of the field saved on the output shapefile "
                              "(broadcast to the size of input paths)")
+    # - Validate the XML file against the schema
+    parser.add_argument("-V", "--validate_xml", type=str,
+                        default='None', help="Validate the XML file "
+                                             "against the schema - Path.")
     # - C: Compress output shapefile - .zip format
     parser.add_argument("-C", "--compress", action="store_true",
                         help="Compress output shapefile - .zip format")
@@ -367,6 +374,17 @@ def main() -> None:
                 with open(os.path.join(out_prod_dir, f"{out_d_name}.xml"),
                           'w') as f:
                     f.write(pretty_xml)
+
+                # - Validate the XML file against the schema
+                if args.validate_xml != 'None':
+                    if os.path.exists(args.validate_xml):
+                        validate_xml_against_schema(
+                            os.path.join(out_prod_dir, f"{out_d_name}.xml"),
+                            args.validate_xml)
+                    else:
+                        logging.warning(
+                            f"# - The file {args.validate_xml} "
+                            f"does not exist.")
 
                 # - Check if the --compress argument was provided
                 if args.compress:

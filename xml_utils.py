@@ -7,12 +7,16 @@ Python Dependencies:
 - xml.etree.ElementTree: XML parsing and generation
 - xml.dom.minidom: Pretty print xml files
 - typing: Type hints
+- lxml: XML validation against a schema
+- pathlib: Work with file paths
 """
 import zipfile
 import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom.minidom import parseString
+from lxml import etree
 from typing import Union, Dict, List
+from pathlib import Path
 
 
 def xml_to_dict(element: ET.Element) -> Union[Dict, str]:
@@ -82,3 +86,16 @@ def dict_to_xml(input_dict: Dict, filename: str) -> None:
     # Write the pretty printed xml to file
     with open(filename, 'w') as xml_file:
         xml_file.write(parsed_xml.toprettyxml(indent="  "))
+
+
+def validate_xml_against_schema(xml_input: str | Path,
+                                xsd_input: str | Path) -> None:
+    xsd_tree = etree.parse(xsd_input)
+    xsd_schema = etree.XMLSchema(xsd_tree)
+    xml_tree = etree.parse(xml_input)
+    try:
+        xsd_schema.assertValid(xml_tree)
+        print("# - The XML file is valid against the provided schema.")
+    except etree.DocumentInvalid as e:
+        print("# - The XML file is not valid "
+              "against the schema. Error:", str(e))

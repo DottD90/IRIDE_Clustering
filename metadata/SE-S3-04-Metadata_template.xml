@@ -1,0 +1,28 @@
+<?xml version="1.0" ?>
+<GSP>
+	<gsp_id>S3-04-SNT-02</gsp_id>
+	<product_id>ISS_S304SNT02_20180702_20230624_051D0842IW2_01</product_id>
+	<description>Active deformation areas close to infrastructures</description>
+	<sensor_id>SNT</sensor_id>
+	<track_id>051</track_id>
+	<provider>eGeos</provider>
+	<production_date>20240129</production_date>
+	<start_date>20180702</start_date>
+	<end_date>20230624</end_date>
+	<bbox>16.535414953681805 39.17728390709256 17.12968620593705 39.414595493616275</bbox>
+	<geometry>{'type': 'Polygon', 'coordinates': [[(16.535414953681805, 39.17728390709256), (17.12968620593705, 39.17728390709256), (17.12968620593705, 39.414595493616275), (16.535414953681805, 39.414595493616275), (16.535414953681805, 39.17728390709256)]]}</geometry>
+	<crs>EPSG:4326</crs>
+	<dataset>
+		<gsp>
+			<gsp_id>S3-01-SNT-01</gsp_id>
+			<product_id>ISS_S301SNT01_20180702_20230624_051D0842IW2_01</product_id>
+			<burst_id>051-0842-IW2-VV</burst_id>
+			<description>Single Geometry Deformation</description>
+		</gsp>
+		<input>
+			<input_id>S3-NEO-I09</input_id>
+			<version>OpenStreetMap</version>
+			<description>OpenStreetMap (Version 1.0). OpenStreetMap Foundation. https://doi.org/10.13127/osm/1.0.</description>
+		</input>
+	</dataset>
+</GSP>
