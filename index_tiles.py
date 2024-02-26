@@ -78,51 +78,71 @@ def main() -> None:
     # - Loop though the generated dataframe and verify if the file relative
     # - to the tile exists in the tile directory.
     tile_dir_content = os.listdir(args.tile_dir)
-    path_to_tiles = []
-    start_date = []
-    end_date = []
 
     if len(aoi_tiles) == 0:
         raise ValueError("# - No tiles found covering "
                          "the selected area of interest.")
     aoi_tiles = aoi_tiles.reset_index(drop=True).to_crs("EPSG:3035")
+    aoi_tiles_v = aoi_tiles.copy()
+    aoi_tiles_e = aoi_tiles.copy()
 
-    for index, row in aoi_tiles.iterrows():
-        # - Extract tile identifier
-        x_c, y_c = row['geometry'].exterior.coords[0]
-        xc_str = str(int(np.floor(x_c/1e5)))
-        yc_str = str(int(np.ceil(y_c/1e5)))
-        print(f"# - Looking for tile E{xc_str}N{yc_str}")
-        re_pattern = re.compile(f"E{xc_str}N{yc_str}")
-        found_tile = [tile for tile in tile_dir_content if
-                      re.search(re_pattern, tile) and tile.endswith(".zip")]
+    for ort in ['V', 'E']:
+        path_to_tiles = []
+        start_date = []
+        end_date = []
+        ortho = []
 
-        if len(found_tile) > 0:
-            path_to_tiles.append(os.path.join(args.tile_dir,
-                                              found_tile[0]))
-            # - Extract xml metadata file from the zip file
-            meta_dict \
-                = extract_xml_from_zip(os.path.join(args.tile_dir,
-                                                    found_tile[0]))[0]
-            # -
-            try:
-                start_date.append(meta_dict['start_date'])
-                end_date.append(meta_dict['end_date'])
-            except KeyError:
-                # - If the metadata file does not contain the start and end
-                # - date, extract it from thr filename.
-                # - NOTE - This should be a temporary solution.
-                start_date.append(found_tile[0].split('_')[2])
-                end_date.append(found_tile[0].split('_')[3])
+        for index, row in aoi_tiles_v.iterrows():
+            # - Extract tile identifier
+            x_c, y_c = row['geometry'].exterior.coords[0]
+            xc_str = str(int(np.floor(x_c/1e5)))
+            yc_str = str(int(np.ceil(y_c/1e5)))
+
+            # - Check for both Vertical and East-West Ortho Products.
+            print(f"# - Looking for tile E{xc_str}N{yc_str}{ort}O")
+            re_pattern = re.compile(f"E{xc_str}N{yc_str}{ort}O")
+            found_tile = [tile for tile in tile_dir_content if
+                          re.search(re_pattern, tile)
+                          and tile.endswith(".zip")]
+
+            if len(found_tile) > 0:
+                path_to_tiles.append(os.path.join(args.tile_dir,
+                                                  found_tile[0]))
+                # - Extract xml metadata file from the zip file
+                meta_dict \
+                    = extract_xml_from_zip(os.path.join(args.tile_dir,
+                                                        found_tile[0]))[0]
+                # -
+                try:
+                    start_date.append(meta_dict['start_date'])
+                    end_date.append(meta_dict['end_date'])
+                except KeyError:
+                    # - If the metadata file does not contain the start and end
+                    # - date, extract it from thr filename.
+                    # - NOTE - This should be a temporary solution.
+                    start_date.append(found_tile[0].split('_')[2])
+                    end_date.append(found_tile[0].split('_')[3])
+            else:
+                path_to_tiles.append('None')
+                start_date.append('None')
+                end_date.append('None')
+            ortho.append(ort)
+
+        if ort == 'V':
+            # - Add the path to the bursts to the dataframe
+            aoi_tiles_v["Path"] = path_to_tiles
+            aoi_tiles_v["Ortho"] = ortho
+            aoi_tiles_v["start_date"] = start_date
+            aoi_tiles_v["end_date"] = end_date
         else:
-            path_to_tiles.append('None')
-            start_date.append('None')
-            end_date.append('None')
+            # - Add the path to the bursts to the dataframe
+            aoi_tiles_e["Path"] = path_to_tiles
+            aoi_tiles_e["Ortho"] = ortho
+            aoi_tiles_e["start_date"] = start_date
+            aoi_tiles_e["end_date"] = end_date
 
-    # - Add the path to the bursts to the dataframe
-    aoi_tiles["Path"] = path_to_tiles
-    aoi_tiles["start_date"] = start_date
-    aoi_tiles["end_date"] = end_date
+    # - Merge the two dataframes
+    aoi_tiles = aoi_tiles_v._append(aoi_tiles_e, ignore_index=True)
     # - Create directory to save the shapefile
     out_dir = Path(args.tile_dir).parent / Path('AOIs_tiles')
     os.makedirs(out_dir, exist_ok=True)
@@ -137,4 +157,7 @@ def main() -> None:
 
 
 if __name__ == '__main__':
+    start_time = datetime.now()
     main()
+    end_time = datetime.now()
+    print(f"# - Computation Time: {end_time - start_time}")
