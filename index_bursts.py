@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 u"""
 index_bursts.py
 Written by: Enrico Ciraci' - February 2024
@@ -117,6 +118,9 @@ def main() -> None:
 
     # - Save the dataframe to a shapefile
     out_shp = out_dir / Path(aoi_file).name
+    # -  if a column named 'overlap' exists, remove it
+    if 'overlap' in aoi_bursts.columns:
+        aoi_bursts = aoi_bursts.drop(columns=['overlap'])
     aoi_bursts.to_file(str(out_shp), driver="ESRI Shapefile")
     print(f"# - Shapefile saved to {out_shp}")
 
