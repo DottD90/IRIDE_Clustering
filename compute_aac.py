@@ -157,54 +157,64 @@ def main() -> None:
                         default=os.getcwd(),
                         help='Output directory where '
                              'the results will be saved.')
+
     # - K: Number of classes for k-Means velocity clustering
     parser.add_argument("-K", "--kmeans-classes",
                         type=int, default=21, nargs="+",
                         help="Number of classes for k-Means "
                              "velocity clustering (broadcast to the "
                              "size of input paths)")
+
     # - T: Velocity threshold applied to clusters
     parser.add_argument("-T", "--vel-threshold", type=float,
                         default=1.25, nargs="+",
                         help="Velocity threshold applied to clusters "
                              "(broadcast to the size of input paths)")
+
     # - E: epsilon parameter for DBSCAN algorithm and alphashape
     parser.add_argument("-E", "--eps", type=float,
                         default=25, nargs="+",
                         help="epsilon parameter for DBSCAN algorithm and "
                              "alphashape (broadcast to the size of "
                              "input paths)")
+
     # - M: minimum number of samples, fed to the DBSCAN algorithm
     parser.add_argument("-M", "--min-samples", type=int,
                         default=10, nargs="+",
                         help="minimum number of samples, "
                              "fed to the DBSCAN algorithm "
                              "(broadcast to the size of input paths)")
+
     # - P: base string for PID construction
     parser.add_argument("-P", "--pid-base", type=str,
                         default="bDG1", nargs="+",
                         help="base string for PID construction "
                              "(broadcast to the size of input paths)")
+
     # - B: buffer used to dilate polygons
     parser.add_argument("-B", "--buffer", type=float,
                         default=12.5, nargs="+",
                         help="buffer used to dilate polygons "
                              "(broadcast to the size of input paths)")
+
     # - I: input field used for clustering
     parser.add_argument("-I", "--in-field", type=str,
                         default="mean_vel", nargs="+",
                         choices=["mean_vel", "acc"],
                         help="input field used for clustering "
                              "(broadcast to the size of input paths)")
+
     # - O: name of the field saved on the output shapefile
     parser.add_argument("-O", "--out-field", type=str,
                         default="mean_vel", nargs="+",
                         help="name of the field saved on the output shapefile "
                              "(broadcast to the size of input paths)")
+
     # - Validate the XML file against the schema
     parser.add_argument("-V", "--validate_xml", type=str,
                         default='None', help="Validate the XML file "
                                              "against the schema - Path.")
+
     # - C: Compress output shapefile - .zip format
     parser.add_argument("-C", "--compress", action="store_true",
                         help="Compress output shapefile - .zip format")
@@ -400,4 +410,4 @@ if __name__ == "__main__":
     start_time = datetime.now()
     main()
     end_time = datetime.now()
-    logging.info(f"# - Computation Time: {end_time - start_time}")
+    print(f"# - Computation Time: {end_time - start_time}")
