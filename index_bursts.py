@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 u"""
 index_bursts.py
 Written by: Enrico Ciraci' - February 2024
@@ -32,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 # - External modules
 import geopandas as gpd
+from xml_utils import extract_xml_from_zip
 
 
 def main() -> None:
@@ -74,11 +76,13 @@ def main() -> None:
 
     # - Loop though the generated dataframe and verify if the file relative
     # - to the burst exists in the burst directory.
-    busrt_dir_content = os.listdir(args.burst_dir)
+    burst_dir_content = os.listdir(args.burst_dir)
     path_to_bursts = []
+    start_date = []
+    end_date = []
 
     if len(aoi_bursts) == 0:
-        raise ValueError("No bursts found covering "
+        raise ValueError("# - No bursts found covering "
                          "the selected area of interest.")
 
     for index, row in aoi_bursts.iterrows():
@@ -86,23 +90,37 @@ def main() -> None:
         burst = row["Burst"]
         subswath = row["Subswath"]
         re_pattern = re.compile(f"{track}.*{burst}{subswath}")
-        found_bursts = [bst for bst in busrt_dir_content if
+        found_bursts = [bst for bst in burst_dir_content if
                         re.search(re_pattern, bst) and bst.endswith(".zip")]
 
         if len(found_bursts) > 0:
             path_to_bursts.append(os.path.join(args.burst_dir,
                                                found_bursts[0]))
+            # - Extract xml metadata file from the zip file
+            meta_dict \
+                = extract_xml_from_zip(os.path.join(args.burst_dir,
+                                                    found_bursts[0]))[0]
+            # -
+            start_date.append(meta_dict['start_date'])
+            end_date.append(meta_dict['end_date'])
         else:
             path_to_bursts.append('None')
+            start_date.append('None')
+            end_date.append('None')
 
     # - Add the path to the bursts to the dataframe
     aoi_bursts["Path"] = path_to_bursts
+    aoi_bursts["start_date"] = start_date
+    aoi_bursts["end_date"] = end_date
     # - Create directory to save the shapefile
     out_dir = Path(args.burst_dir).parent / Path('AOIs_bursts')
     os.makedirs(out_dir, exist_ok=True)
 
     # - Save the dataframe to a shapefile
     out_shp = out_dir / Path(aoi_file).name
+    # -  if a column named 'overlap' exists, remove it
+    if 'overlap' in aoi_bursts.columns:
+        aoi_bursts = aoi_bursts.drop(columns=['overlap'])
     aoi_bursts.to_file(str(out_shp), driver="ESRI Shapefile")
     print(f"# - Shapefile saved to {out_shp}")
 

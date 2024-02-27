@@ -4,7 +4,7 @@ Written by: Filippo Santarelli - 02/2024
 Edited by Enrico Ciraci' - 02/2024
 
 Compute active areas perimeter (polygons) from a set of points/persistent
-sctterers. The algorithm is based on a combination of K-means and DBSCAN
+scatterers. The algorithm is based on a combination of K-means and DBSCAN
 clustering algorithms. The output is a shapefile containing the polygons
 with the following fields:
     - pid: product ID
@@ -21,15 +21,13 @@ Script usage:
 usage: Active Areas Deformation Clustering
     [-h] [-K KMEANS_CLASSES [KMEANS_CLASSES ...]] [-T VEL_THRESHOLD
     [VEL_THRESHOLD ...]] [-E EPS [EPS ...]] [-M MIN_SAMPLES [MIN_SAMPLES ...]]
-    [-p PID_BASE [PID_BASE ...]] [-b BUFFER [BUFFER ...]]
-    [-i IN_FIELD [IN_FIELD ...]] [-o OUT_FIELD [OUT_FIELD ...]] [-j JOBS]
+    [-P PID_BASE [PID_BASE ...]] [-B BUFFER [BUFFER ...]]
+    [-I IN_FIELD [IN_FIELD ...]] [-O OUT_FIELD [OUT_FIELD ...]] [-J JOBS]
     in_path [in_path ...]
 
-Default parameters are adapted to CSK SVC01 products.
-
 positional arguments:
-  in_path               List of space-separated shapefiles, CSV or
-    ZIP containing the CSV to be processed at once
+  in_path      ESRI shapefiles, CSV or ZIP containing the CSV
+   to be processed at once
 
 options:
   -h, --help            show this help message and exit
@@ -97,6 +95,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import concurrent.futures as cf
+from typing import Optional
 # - Third-party modules
 from sklearn.cluster import DBSCAN, KMeans
 import alphashape
@@ -122,6 +121,13 @@ BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
 def encode(n, p, pad=None):
+    """
+    Encode a number in base 62
+    :param n: input number
+    :param p: base
+    :param pad: padding
+    :return: base 62 encoded number
+    """
     if n < 0:
         raise ValueError("Cannot encode negative numbers.")
     res = ""
@@ -135,38 +141,54 @@ def encode(n, p, pad=None):
     return res.rjust(pad, BASE62[0])
 
 
-def read_as_geodataframe(path: Path, **kwargs) -> gpd.GeoDataFrame:
+def read_csv_as_geodataframe(path: Path, **kwargs) -> gpd.GeoDataFrame:
+    """
+    Read a CSV file as a GeoDataFrame
+    :param path: absolute path to the file
+    :param kwargs: dictionary of parameters passed to the read_csv method
+    :return: gpd.GeoDataFrame
+    """
+    df = pd.read_csv(path, **kwargs)
+    return gpd.GeoDataFrame(
+        data=df,
+        geometry=gpd.points_from_xy(df.easting, df.northing, crs=3035),
+        crs=3035,
+    )
+
+
+def read_as_geodataframe(path: Path, **kwargs) -> Optional[gpd.GeoDataFrame]:
+    """
+    Read a file as a GeoDataFrame
+    :param path: absolute path to the file
+    :param kwargs: dictionary of parameters passed to the read_csv method
+    :return: gpd.GeoDataFrame or None if file extension is not recognised
+    """
     path = Path(path)
-    match path.suffix:
-        case ".zip":
-            with fsspec.open("zip://*.csv::" + path.as_posix()) as of:
-                df = pd.read_csv(of, **kwargs)
-            df = gpd.GeoDataFrame(
-                data=df,
-                geometry=gpd.points_from_xy(df.easting, df.northing, crs=3035),
-                crs=3035,
-            )
-        case ".csv":
-            df = pd.read_csv(path, **kwargs)
-            df = gpd.GeoDataFrame(
-                data=df,
-                geometry=gpd.points_from_xy(df.easting, df.northing, crs=3035),
-                crs=3035,
-            )
-        case ".shp":
-            df = gpd.read_file(Path(path))
-            df.crs = 4326
-            df = df.to_crs(3035)
-        case _:
-            raise NotImplementedError(f"File extension {path.suffix} not recognised")
-    return df
+    try:
+        match path.suffix:
+            case ".zip":
+                with fsspec.open("zip://*.csv::" + path.as_posix()) as of:
+                    return read_csv_as_geodataframe(of, **kwargs)
+            case ".csv":
+                return read_csv_as_geodataframe(path, **kwargs)
+            case ".shp":
+                df = gpd.read_file(Path(path))
+                df.crs = 4326
+                return df.to_crs(3035)
+            case _:
+                logging.error(f"File extension {path.suffix} not recognised")
+                return None
+    except Exception as e:
+        logging.error(f"Error reading file {path}: {e}")
+        return None
 
 
 def process_burst(
-        in_path: Path | str, kmeans_classes: int, in_field_threshold: float,
+        in_path: Path | str,
+        kmeans_classes: int, in_field_threshold: float,
         eps: float, min_samples: int, pid_base: int,
         buffer: float, in_field: str, out_field: str,
-        compress: bool = False) -> gpd.GeoDataFrame:
+        ) -> gpd.GeoDataFrame | None:
     """
     Process a single file
     :param in_path: absolute path to the file
@@ -179,15 +201,15 @@ def process_burst(
     :param buffer: polygon buffer size in meters
     :param in_field: input reference field name (e.g. "mean_vel")
     :param out_field: output reference field name (e.g. "mean_vel")
-    :param compress: compress the output shapefile
-    :return: GeoDataFrame with polygons
+    :return: gpd.GeoDataFrame or None if file extension is not recognised
     """
-    # - Load  input data as a GeoDataFrame
-    logging.info("File reading")
+    # - Load input data as a GeoDataFrame
+    logging.info(f"# - Processing file {in_path}")
     df = read_as_geodataframe(in_path)
+    if df is None:
+        return None
 
     # - create classes according to velocity
-    logging.info("KMeans")
     kmeans_algorithm = KMeans(n_clusters=kmeans_classes, n_init="auto")
     vel_clusters \
         = kmeans_algorithm.fit_predict(df[in_field].values.reshape(-1, 1))
@@ -203,7 +225,6 @@ def process_burst(
     df["label"] = vel_clusters
 
     # - Apply Density-based clustering (DBSCAN)
-    logging.info("DBSCAN")
     ps_coords = np.stack((df.geometry.x, df.geometry.y),
                          axis=-1)[df.label == 1, :]
     spatial_clustering = DBSCAN(eps=eps, min_samples=min_samples)
@@ -212,7 +233,7 @@ def process_burst(
     df.loc[df.label == 1, "polygon_id"] = polygons_ids
     df.loc[df.label != 1, "polygon_id"] = -1
 
-    # - compute polygons
+    # - Compute Polygons
     poly_geoms = []
     data = {
         "pid": [],
@@ -223,6 +244,7 @@ def process_burst(
         "min_vel": [],
         "vel_std": [],
     }
+
     for id_pt in df.polygon_id.unique():
         if id_pt == -1:
             continue
@@ -255,28 +277,24 @@ def process_burst(
         data["min_vel"].append(inside_points[out_field].min())
         data["vel_std"].append(vel_std)
         poly_geoms.append(poly)
-    # - Save polygons
-    gdf = gpd.GeoDataFrame(data=data, geometry=poly_geoms, crs=3035)
-    out_path = str(Path(in_path).parent
-                   / f"{Path(in_path).stem}_poly_{in_field}.shp")
-    if compress:
-        out_path += ".zip"
-    gdf.to_file(str(out_path), schema=schema, driver="ESRI Shapefile")
 
+    # - Return the generated polygon
+    gdf = gpd.GeoDataFrame(data=data, geometry=poly_geoms, crs=3035)
     return gdf
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         "Active Areas Deformation Clustering",
-        description="Default parameters are adapted to CSK SVC01 products.",
+        description="Compute active areas perimeter (polygons) from a set of "
+                    "points/persistent scatterers."
     )
     # - Positional arguments
     parser.add_argument(
         "in_path",
         nargs="+",
         type=Path,
-        help="List of space-separated shapefiles, CSV or ZIP "
+        help="List of ESRI Shapefiles, CSV or ZIP "
              "containing the CSV to be processed at once",
     )
     # - Optional arguments

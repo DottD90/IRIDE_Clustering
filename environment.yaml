@@ -12,3 +12,4 @@ dependencies:
   - alphashape
   - shapely
   - tqdm
+  - lxml
