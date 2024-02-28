@@ -16,7 +16,7 @@ options:
   -D OUT_DIR, --out_dir OUT_DIR
                         Output directory where the results will be saved.
 
-Python Dependencise:
+Python Dependencies:
     - pandas:Python Data Analysis Library
         https://pandas.pydata.org/
     - geopandas: Python tools for working with geospatial data in python

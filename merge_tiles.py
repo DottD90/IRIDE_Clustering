@@ -7,7 +7,7 @@ usage: merge_tiles.py [-h] [-D OUT_DIR] index_file
 Merge GSP 2D Deformation Tiles (East-West and Vertical) into a single Product.
 
 positional arguments:
-  index_file            Index file containing the list ofTiles available
+  index_file            Index file containing the list of Tiles available
                         over the AOI.
 
 options:
