@@ -77,9 +77,15 @@ def main() -> None:
     # - Loop though the generated dataframe and verify if the file relative
     # - to the burst exists in the burst directory.
     burst_dir_content = os.listdir(args.burst_dir)
-    path_to_bursts = []
-    start_date = []
-    end_date = []
+    name_list = []              # - List of burst names
+    track_list = []             # - List of track numbers
+    burst_list = []             # - List of burst numbers
+    subswath_list = []          # - List of subswath numbers
+    geometry_list = []          # - List of geometries
+    path_to_bursts = []         # - Path to the bursts
+    start_date = []             # - Start date of the burst
+    end_date = []               # - End date of the burst
+    c_type = []                 # - Calibrated or not
 
     if len(aoi_bursts) == 0:
         raise ValueError("# - No bursts found covering "
@@ -94,24 +100,62 @@ def main() -> None:
                         re.search(re_pattern, bst) and bst.endswith(".zip")]
 
         if len(found_bursts) > 0:
-            path_to_bursts.append(os.path.join(args.burst_dir,
-                                               found_bursts[0]))
-            # - Extract xml metadata file from the zip file
-            meta_dict \
-                = extract_xml_from_zip(os.path.join(args.burst_dir,
-                                                    found_bursts[0]))[0]
-            # -
-            start_date.append(meta_dict['start_date'])
-            end_date.append(meta_dict['end_date'])
+            for bi in range(len(found_bursts)):
+                # - Append the burst info to the lists
+                name_list.append(row["Name"])
+                track_list.append(row["Track"])
+                burst_list.append(row["Burst"])
+                subswath_list.append(row["Subswath"])
+                geometry_list.append(row["geometry"])
+                # - Add other info
+                path_to_bursts.append(os.path.join(args.burst_dir,
+                                                   found_bursts[bi]))
+                # - Extract xml metadata file from the zip file
+                meta_dict \
+                    = extract_xml_from_zip(os.path.join(args.burst_dir,
+                                                        found_bursts[bi]))[0]
+                # -
+                start_date.append(meta_dict['start_date'])
+                end_date.append(meta_dict['end_date'])
+
+                # - Valid only for TRE-A data
+                # - Extract Input Product type from file name
+                p_f_name = found_bursts[bi].split('_')
+                if p_f_name[4].endswith('B'):
+                    # - Basic Products
+                    c_type.append('B')
+                else:
+                    # - Calibrated Products
+                    c_type.append('C')
         else:
+            # - Append the burst info to the lists
+            name_list.append(row["Name"])
+            track_list.append(row["Track"])
+            burst_list.append(row["Burst"])
+            subswath_list.append(row["Subswath"])
+            geometry_list.append(row["geometry"])
+            # - Set other info to None if the burst file is not found
             path_to_bursts.append('None')
             start_date.append('None')
             end_date.append('None')
+            c_type.append('None')
 
-    # - Add the path to the bursts to the dataframe
-    aoi_bursts["Path"] = path_to_bursts
-    aoi_bursts["start_date"] = start_date
-    aoi_bursts["end_date"] = end_date
+    # - Create a new dataframe with the burst info
+    aoi_bursts = gpd.GeoDataFrame({
+        "Name": name_list,
+        "Track": track_list,
+        "Burst": burst_list,
+        "Subswath": subswath_list,
+        "c_type": c_type,
+        "geometry": geometry_list,
+        "Path": path_to_bursts,
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+
+    # - set the crs of the dataframe
+    aoi_bursts.crs = "EPSG:4326"
+
     # - Create directory to save the shapefile
     out_dir = Path(args.burst_dir).parent / Path('AOIs_bursts')
     os.makedirs(out_dir, exist_ok=True)
