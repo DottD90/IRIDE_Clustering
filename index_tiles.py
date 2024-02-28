@@ -99,8 +99,8 @@ def main() -> None:
             yc_str = str(int(np.ceil(y_c/1e5)))
 
             # - Check for both Vertical and East-West Ortho Products.
-            print(f"# - Looking for tile E{xc_str}N{yc_str}{ort}O")
-            re_pattern = re.compile(f"E{xc_str}N{yc_str}{ort}O")
+            print(f"# - Looking for tile E{xc_str}N{yc_str}{ort}")
+            re_pattern = re.compile(f"E{xc_str}N{yc_str}{ort}")
             found_tile = [tile for tile in tile_dir_content if
                           re.search(re_pattern, tile)
                           and tile.endswith(".zip")]

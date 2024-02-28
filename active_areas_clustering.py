@@ -93,6 +93,7 @@ from datetime import datetime
 import fsspec
 import pandas as pd
 import numpy as np
+import scipy as sp
 from pathlib import Path
 import concurrent.futures as cf
 from typing import Optional
@@ -251,7 +252,12 @@ def process_burst(
         mask = df.polygon_id == id_pt
         sub_df = df.loc[mask, :]
         x_s = np.stack((sub_df.geometry.x, sub_df.geometry.y), axis=-1)
-        poly = alphashape.alphashape(x_s, alpha=1 / eps)
+
+        try:
+            # - This Exception should be further investigated
+            poly = alphashape.alphashape(x_s, alpha=1 / eps)
+        except sp.spatial._qhull.QhullError:
+            continue
         if isinstance(poly, gpd.GeoDataFrame):
             poly = poly.dissolve().geometry[0]
         elif isinstance(poly, (shapely.geometry.Point,
